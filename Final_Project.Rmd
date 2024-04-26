@@ -1,0 +1,1078 @@
+---
+---
+title: "Final Project"
+output:
+  pdf_document:
+    latex_engine: pdflatex
+  
+---
+
+
+
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(maps)
+library(reshape2)
+#library(FactoMineR)
+library(corrr)
+library(ggplot2)
+library(ggcorrplot)
+library(devtools)
+library(factoextra)
+library(tidyr)
+library(stringr)
+library(plotly)
+library(usmap)
+library(knitr)
+library(mice)
+library(VIM)
+library(lattice)
+library(reshape2)
+library(lubridate)
+library(leaflet)
+library(VIM)
+library(caret)
+library(stats)
+#library(FactoMineR)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+data<-read.csv(file="50_stations.csv", header=TRUE, sep=",")
+head(data);dim(data)
+```
+
+```{r}
+
+m <- leaflet() %>% 
+  addProviderTiles(providers$CartoDB.DarkMatter) %>% 
+  setView(-94.6859, 46.7296, zoom = 7) %>% 
+  addCircles(data = data, lng = ~LONGITUDE, lat = ~LATITUDE, popup = ~paste("Station:", STATION, "<br>", "Name:", NAME), weight = 10, radius=50, 
+                 color="#ffa500", stroke = TRUE, fillOpacity = 0.8) 
+m
+
+
+
+```
+
+
+
+
+*DAta Structure*
+
+
+
+
+```{r}
+summary(data)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+*Proportion of Missing Values*
+
+```{r}
+Pmissing<- function(x){sum(is.na(x))/length(x)*100}
+apply(data,2,Pmissing)
+apply(data,1,Pmissing)
+
+```
+
+
+
+
+
+```{r}
+# Calculate the proportion of missing data for each variable
+missing_proportions <- colSums(is.na(data)) / nrow(data)
+
+# Create a color palette that has as many colors as there are variables
+colors <- rainbow(length(missing_proportions))
+
+# Make a bar plot with different colors
+barplot(missing_proportions, main = "Proportion of Missing Data by Variable", 
+        ylab = "Proportion Missing", xlab = "Variables", col = colors, las = 2, cex.names = 0.8)
+
+# Adding a legend to explain the colors
+legend("topright", legend = names(missing_proportions), fill = colors, cex = 0.75, title = "Variables")
+
+```
+
+
+
+```{r}
+# Install and load visdat if not already installed
+if (!require("visdat")) {
+    install.packages("visdat")
+    library(visdat)
+}
+
+# Visualize missing data
+vis_miss(data)
+
+```
+
+
+
+
+
+Imputing Missing Values
+
+```{r}
+model.imputed<-preProcess(data,method = c("medianImpute"))
+completedData<-predict(model.imputed,data)
+completedData
+
+```
+
+
+
+```{r}
+
+#df <- data[, !(names(data) %in% c("DATE", "Year", "Month"))]
+
+# Display a message about what is being calculated
+#cat("Percentage of missing values in  20 selected variables\n")
+
+# Calculate the percentage of missing values for each column, sort them in decreasing order, and display the top 7
+#missing_percentages <- sort(colMeans(is.na(df)) * 100, decreasing = TRUE)  # Multiply by 100 to get percentages
+#head(missing_percentages, 20)  # Show only the top 7
+```
+
+
+
+
+```{r}
+cat("Percentage of missing Values in Variablesafter Imputation")
+
+head(sort(colMeans(is.na(completedData)),decreasing = TRUE),20)
+dim(completedData)
+
+```
+
+
+
+
+
+```{r}
+# Get a logical vector indicating numeric columns
+numeric_columns <- sapply(completedData, is.numeric)
+
+# Combine "NAME" with the names of numeric columns
+column_names <- c("NAME", names(completedData)[numeric_columns])
+
+# Subset completedData using the vector of column names
+completedf <- completedData[, column_names, drop = FALSE]
+
+
+
+
+```
+
+
+
+ Selecting only numeric columns 
+```{r}
+#completedf<-completedData[,c("NAME",sapply(completedData,is.numeric))]
+#completedf
+
+```
+
+Calculating Mean values of numeric Variables
+
+
+```{r}
+# Get numeric columns only
+numeric_columns <- sapply(completedf, is.numeric)
+
+# Combine "NAME" with the names of numeric columns
+column_names <- c("NAME", names(completedf)[numeric_columns])
+
+# Subset completedData using the vector of column names
+completedf_numeric <- completedf[, column_names]
+
+# Calculate mean for each numeric column, grouped by NAME
+mean_values <- aggregate(. ~ NAME, completedf_numeric, mean, na.rm = TRUE)
+
+# Print the resulting data frame with means
+print(mean_values)
+
+```
+
+
+
+
+```{r}
+library(dplyr)
+
+
+# Calculate the mean for each numeric column, grouped by NAME
+#mean_values <- completedf %>%
+ # group_by(NAME) %>%
+  #summarise(across(where(is.numeric), mean, na.rm = TRUE), .groups = 'drop')
+
+# Print the resulting data frame with means
+#print(mean_values)
+```
+
+
+
+Bivariate Analysis
+
+```{r}
+# Scatter plot example for TAVG vs PRCP
+library(ggplot2)
+
+# Creating the plot with a gradient color based on TAVG
+ggplot(mean_values, aes(x = TAVG, y = PRCP, color = TAVG)) +
+  geom_point(alpha = 0.6) +
+  scale_color_gradient(low = "blue", high = "red") +  # Blue for low values, red for high values
+  labs(
+    title = "Relationship between Average Temperature and Precipitation",
+    x = "Average Temperature (°C)",
+    y = "Precipitation (mm)",
+    color = "Temp (°C)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+
+
+```
+
+
+
+
+
+#Multi Variate Analysis
+
+```{r}
+groupColumnIndex <- match("NAME", names(completedData))
+
+
+# Assuming the columns to plot are correctly specified, you might want to check these indices
+# Now, filter the data to include only the first five unique 'NAME' categories
+uniqueNames <- unique(mean_values$NAME)
+firstFiveNamesData <- completedData[completedData$NAME %in% uniqueNames[1:4], ]
+
+# Now let's plot using ggparcoord from the GGally package
+library(GGally)
+ggparcoord(data = firstFiveNamesData, columns = c(39, 141, 145), groupColumn = groupColumnIndex) + theme_minimal()
+
+```
+#Time Series Plot for the first 20 variables
+
+
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Assuming completedData contains columns DATE, TAVG, EVAP, PRCP
+
+# Reshape the data to long format
+longData <- completedData %>%
+  pivot_longer(cols = c(TAVG, EVAP, PRCP), names_to = "Variable", values_to = "Value")
+
+# Create the plot with updated color scheme and design adjustments
+p <- ggplot(longData, aes(x = DATE, y = Value, color = Variable)) +
+  geom_line() +
+  geom_smooth(se = FALSE, method = "loess") +
+  facet_wrap(~ Variable, scales = "free_y") +
+  scale_color_manual(values = c("TAVG" = "#FF5733", "EVAP" = "#33C1FF", "PRCP" = "#8E44AD")) +
+  labs(
+    title = "Time Series Plot",
+    x = "Date",
+    y = "Measured Value",
+    color = "Variable"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    axis.title.x = element_text(face = "bold"),
+    axis.title.y = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.title = element_text(face = "bold"),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "#ECF0F1"),
+    panel.border = element_rect(colour = "black", fill=NA, size=1)
+  )
+
+# Adjust the plot size to fit your screen or desired output dimension
+ggsave("ClimateDataPlot.png", plot = p, width = 16, height = 9, dpi = 300)
+
+
+```
+
+
+
+
+
+
+
+
+SECTION B
+
+
+
+#STatistical Test of Normality using Shapiro-Wilk Normality Test
+
+
+
+
+
+1. Graphical Method of Normality Test
+
+```{r}
+
+library(ggplot2)
+
+# Histograms
+ggplot(mean_values, aes(x = EVAP)) + geom_histogram(bins = 30, fill = "skyblue") + ggtitle("Histogram for EVAP")
+ggplot(mean_values, aes(x = TAVG)) + geom_histogram(bins = 30, fill = "#8B636C") + ggtitle("Histogram for TAVG")
+ggplot(mean_values, aes(x = PRCP)) + geom_histogram(bins = 30, fill = "salmon") + ggtitle("Histogram for PRCP")
+
+# Q-Q Plots
+qqnorm(mean_values$EVAP, main = "Q-Q Plot for EVAP")
+qqline(mean_values$EVAP, col = "steelblue", lwd = 2)
+qqnorm(mean_values$TAVG, main = "Q-Q Plot for TAVG")
+qqline(mean_values$TAVG, col = "darkgreen", lwd = 2)
+qqnorm(mean_values$PRCP, main = "Q-Q Plot for PRCP")
+qqline(mean_values$PRCP, col = "red", lwd = 2)
+
+
+```
+
+
+
+
+
+
+```{r}
+# Shapiro-Wilk Normality Test
+shapiro.test(completedData$EVAP)
+shapiro.test(completedData$TAVG)
+shapiro.test(completedData$PRCP)
+
+
+```
+
+
+
+
+
+
+#Removing variables not needed
+
+
+
+```{r}
+df <- completedData[,c("DATE", "NAME","EVAP","PRCP","TAVG")]
+head(df);dim(df)
+```
+
+
+
+
+
+
+
+
+```{r}
+# Ensure the DATE column is in Date format
+data$DATE <- ymd(data$DATE)  # Adjust the function based on your date format, e.g., dmy(), mdy()
+
+# Extract month and year
+data$Year <- format(data$DATE, "%Y")
+data$Month <- format(data$DATE, "%m")
+
+# View the modified data
+head(data)
+
+```
+
+
+
+
+
+
+
+```{r}
+# Convert the DATE column to a Date type assuming the format is 'Year-Month' and append "-01" to make it a full date
+completedData$DATE <- as.Date(paste0(completedData$DATE, "-01"))
+
+# Extract the month from the DATE column
+completedData$Month <- month(completedData$DATE)
+
+# Filter data for October to March (months 10, 11, 12, 1, 2, 3)
+oct_to_mar <- completedData %>%
+  filter(Month %in% c(10, 11, 12, 1, 2, 3))
+
+# Filter data for April to September (months 4, 5, 6, 7, 8, 9)
+apr_to_sep <- completedData %>%
+  filter(Month %in% c(4, 5, 6, 7, 8, 9))
+
+# Print the count of entries in each filtered dataset
+print(paste("October to March entries:", nrow(oct_to_mar)))
+print(paste("April to September entries:", nrow(apr_to_sep)))
+```
+
+
+#Extracting Month and summary statistics
+
+
+
+
+```{r}
+# Convert the DATE column to Date type if not already done
+completedData$DATE <- as.Date(paste0(completedData$DATE, "-01"))
+
+# Extract the Month from the DATE column
+completedData$Month <- format(completedData$DATE, "%m")
+
+# Select relevant columns including the Month for filtering
+selectedData <- completedData[, c("DATE", "EVAP", "PRCP", "TAVG", "Month")]
+
+# Ensure selectedData is available and contains the required columns
+print(head(selectedData))
+
+# Filter data for October to March (months 10, 11, 12, 1, 2, 3)
+oct_to_mar <- selectedData[selectedData$Month %in% c("10", "11", "12", "01", "02", "03"), ]
+
+# Filter data for April to September (months 4, 5, 6, 7, 8, 9)
+apr_to_sep <- selectedData[selectedData$Month %in% c("04", "05", "06", "07", "08", "09"), ]
+
+# Calculate means for October to March
+mean_oct_to_mar <- sapply(oct_to_mar[, c("EVAP", "PRCP", "TAVG")], mean, na.rm = TRUE)
+
+# Calculate means for April to September
+mean_apr_to_sep <- sapply(apr_to_sep[, c("EVAP", "PRCP", "TAVG")], mean, na.rm = TRUE)
+
+# Print the results
+print("Mean values for October to March:")
+print(mean_oct_to_mar)
+
+print("Mean values for April to September:")
+print(mean_apr_to_sep)
+
+```
+
+
+
+`
+```{r}
+
+# Install and load the Hotelling package if not already installed
+if (!require(Hotelling)) {
+  install.packages("Hotelling")
+  library(Hotelling)
+}
+
+# Convert the DATE column to Date type if not already done
+completedData$DATE <- as.Date(paste0(completedData$DATE, "-01"))
+
+# Extract the Month from the DATE column
+completedData$Month <- format(completedData$DATE, "%m")
+
+# Select relevant columns including the Month for filtering
+selectedData <- completedData[, c("EVAP", "PRCP", "TAVG", "Month")]
+
+# Ensure selectedData is available and contains the required columns
+print(head(selectedData))
+
+# Filter data for October to March (months 10, 11, 12, 1, 2, 3)
+oct_to_mar <- selectedData[selectedData$Month %in% c("10", "11", "12", "01", "02", "03"), ]
+
+# Filter data for April to September (months 4, 5, 6, 7, 8, 9)
+apr_to_sep <- selectedData[selectedData$Month %in% c("04", "05", "06", "07", "08", "09"), ]
+
+# Perform Hotelling's T-squared test
+hotelling_test_result <- hotelling.test(oct_to_mar[, c("EVAP", "PRCP", "TAVG")], 
+                                        apr_to_sep[, c("EVAP", "PRCP", "TAVG")])
+
+# Print the test result
+print(hotelling_test_result)
+
+```
+
+
+`
+Checking Distribution of Data
+
+
+```{r}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+long_df <- pivot_longer(mean_values, cols = -NAME, names_to = "variable", values_to = "value")
+
+# Create a boxplot
+ggplot(long_df, aes(x = NAME, y = value)) +
+  geom_boxplot() +
+  ggtitle("Original Distribution of Values in Variables") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+```
+
+
+
+
+
+#STANDARDIZATION
+
+Scale and Center all variables
+
+
+
+
+
+
+
+```{r}
+
+ mean_values<-as.data.frame(mean_values)
+std.dat<-preProcess(mean_values,method=c("center","scale"))
+std.df<-predict(std.dat,completedf)
+std.df <- as.data.frame(std.df)
+std.df
+
+
+```
+
+
+
+
+
+
+#New Distribution after Standardizing the Data
+
+
+
+```{r}
+# Load necessary libraries
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+
+# Pivot only numeric columns to long format
+std.df_long <- pivot_longer(std.df,
+                            cols = where(is.numeric),
+                            names_to = "variable",
+                            values_to = "value")
+
+# Plot the data
+ggplot(std.df_long, aes(x = variable, y = value)) +
+  geom_boxplot() +
+  ggtitle("Distribution of Numeric Variables") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+
+
+
+
+
+
+
+After scaling variable distributions look much better. 
+
+All variables centered and scaled
+By using PCA, we can transform the data to eliminate variable dependencies and eliminate unimportant noisy variables.We can also use robust PCA methods which are capable of tolerating outliers.
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+std.df<-read.csv(file="std.df.csv", header=TRUE, sep=",")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Identify numeric columns
+numeric_columns <- sapply(mean_values, is.numeric)
+
+# Subset the data frame to keep only numeric columns
+mean_values_numeric <- mean_values[, numeric_columns]
+
+# Check the structure to confirm the selection
+str(mean_values_numeric)
+
+# Proceed with your analysis, such as PCA
+
+pca_result <- prcomp(mean_values_numeric, center = TRUE, scale. = TRUE)
+print(summary(pca_result))
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+#set_plot_dimensions(0.9,0.7)
+fviz_pca(pca_result,col.var="contrib",axes=c(1,2),
+         gradient.cols=c("white","navy","#FC4E07"),repel=T)
+
+
+
+
+```
+
+
+The color of each variable in the plot represents its contribution to the PCs displayed. Variables that contribute more significantly to the PCs are those that stand out with a distinct color based on the gradient (i.e., white to navy to #FC4E07). The gradient typically moves from a less intense color for lower contributions to a more intense color for higher contributions.
+
+
+
+
+```{r}
+
+plot.cumvar <- function(pca_result) {
+    # Calculate proportion of variance explained by each component
+    pc.var = append(0, pca_result$sdev^2 / sum(pca_result$sdev^2))
+    pc.nos = seq(0, length(pc.var) - 1)
+    
+    # Plotting setup
+    plot(x = pc.nos, y = cumsum(pc.var), type = "b", col = "navy", axes = FALSE,
+         xlab = "Principal Component", ylab = "Cumulative Variance",
+         main = "Cumulative Variance Plot", panel.first = grid(),
+         xlim = c(0, length(pc.var) - 1), ylim = c(0, 1))
+    
+    # Adding axes
+    axis(side = 1, at = pc.nos)
+    axis(side = 2, at = seq(0, 1, by = 0.2))
+    
+    # Draw the box around the plot
+    box()
+}
+plot.cumvar(pca_result)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+
+# Assuming you have chosen to retain the first two principal components for clustering
+pc_scores <- pca_result$x[, 1:3]
+set.seed(123)  # For reproducibility
+fviz_nbclust(pc_scores, kmeans, method = "wss") +
+  geom_vline(xintercept = 3, linetype = 2)  # Adjust the number as per the plot
+
+
+```
+
+`
+```{r}
+set.seed(123)  # Set seed for reproducibility
+kmeans_result <- kmeans(pc_scores, centers = 3, nstart = 25)
+
+# Check the clustering results
+print(kmeans_result)
+#std.df$Cluster <- kmeans_result$cluster
+```
+
+```{r}
+# Visualize PCA with clusters
+fviz_pca_ind(pca_result,
+             geom.ind = "point",  # Use point to plot individuals
+             habillage = kmeans_result$cluster,  # Color individuals by clusters
+             addEllipses = TRUE,  # Add ellipses around clusters
+             ellipse.level = 0.95)  # Confidence level for the ellipses
+
+```
+
+
+
+```{r}
+  # for fviz_pca_ind
+library(cluster)     # for kmeans
+
+# A list to store kmeans results for different K
+kmeans_results <- list()
+
+# Perform kmeans for K = 2 to 6
+for (k in 2:6) {
+    set.seed(123)  # For reproducibility
+    kmeans_results[[as.character(k)]] <- kmeans(pca_result$x[, 1:2], centers = k, nstart = 25)
+}
+
+```
+
+
+
+```{r}
+# Setup for plotting multiple plots
+library(gridExtra)  # for arranging plots
+plots <- list()
+
+# Generate a plot for each kmeans result
+for (k in names(kmeans_results)) {
+    plot <- fviz_pca_ind(pca_result,
+                         geom.ind = "point",  # Use points to plot individuals
+                         habillage = kmeans_results[[k]]$cluster,  # Color by clusters
+                         addEllipses = TRUE,  # Add ellipses around clusters
+                         ellipse.level = 0.95,  # Confidence level for the ellipses
+                         title = paste("K-means Clustering with K =", k))
+    plots[[k]] <- plot
+}
+
+# Display all plots together
+do.call(grid.arrange, c(plots, ncol = 2))
+
+```
+
+
+
+
+```{r}
+# Adding cluster assignment back to the original data
+mean_values_numeric$Cluster <- kmeans_result$cluster
+
+# Summary statistics by cluster
+aggregate(. ~ Cluster, mean_values_numeric, mean)
+
+```
+
+
+This workflow combines PCA for dimensionality reduction and K-means clustering to categorize the data into meaningful groups based on their principal component scores. This method is effective in handling high-dimensional data by first reducing its dimensions to capture the most significant features with minimal loss of information, then applying clustering to the transformed data.
+
+
+
+
+```{r}
+# Load necessary libraries
+library(reshape2)
+library(ggplot2)
+
+# Melt the entire dataset for heatmap use
+#heatmap_data <- melt(cluster_means, id.vars = "Cluster")
+
+
+```
+
+```{r}
+heatmap_data <- melt(mean_values_numeric, id.vars = "Cluster")
+```
+
+
+
+
+
+
+#Heat Map for variables in PC1,PC@ and PC3
+
+
+```{r}
+# Find unique variables and the number of chunks
+variables <- unique(heatmap_data$variable)
+num_chunks <- ceiling(length(variables) / 4)
+
+# Create a list to store plots (optional, if you want to save or manipulate later)
+plots <- list()
+
+# Loop through each chunk and create a heatmap
+for (i in seq_len(num_chunks)) {
+  # Subset the data for the next four variables
+  vars_subset <- variables[((i - 1) * 4 + 1):min(i * 4, length(variables))]
+  subset_data <- heatmap_data[heatmap_data$variable %in% vars_subset,]
+
+  # Create the heatmap for the current subset of variables
+  plot <- ggplot(subset_data, aes(x = Cluster, y = variable, fill = value)) +
+    geom_tile() +  # Creates the heatmap tiles
+    scale_fill_gradient(low = "gray", high = "red") +  # Color gradient from low to high values
+    labs(title = sprintf("Heatmap of Mean Values by Cluster for Variables %d to %d", (i - 1) * 4 + 1, min(i * 4, length(variables))),
+         x = "Cluster", y = "Variable") +
+    theme_minimal() +  # Use a minimal theme for better aesthetics
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Adjust text alignment
+  
+  # Print or save the plot
+  print(plot)  # If running interactively, this will display the plot
+
+  # Optional: store the plot in the list
+  plots[[i]] <- plot
+}
+
+# Optionally save all plots as separate files or in one PDF
+pdf("Cluster_Variables_Heatmaps.pdf", width = 11, height = 8.5)
+for (p in plots) {
+  print(p)
+}
+dev.off()
+
+
+```
+
+DO the Heat MAP for EVAP, TVAP and PRCP
+
+
+
+```{r}
+# Add the cluster information to the mean_values_numeric data frame
+mean_values_numeric$Cluster <- kmeans_result$cluster
+
+# Filter data to include only the variables of interest
+selected_data <- mean_values_numeric[, c("TAVG", "PRCP", "PRCP", "SNOW", "Cluster")]
+
+# Aggregate the data by cluster
+cluster_means <- aggregate(selected_data[, -5], by = list(Cluster = selected_data$Cluster), FUN = mean, na.rm = TRUE)
+
+# Remove the automatic column names added by 'aggregate'
+names(cluster_means)[1] <- "Cluster"
+
+# Print the resulting data frame
+print(cluster_means)
+
+```
+
+
+
+
+```{r}
+# Assuming you have your full dataset in 'data' and kmeans results in 'kmeans_result'
+#mean_values_numeric$Cluster <- kmeans_result$cluster
+
+# Filter data to include only the variables of interest
+#selected_data <- mean_values_numeric[, c("TAVG", "PRCP", "PRCP", "SNOW","Cluster")]
+
+# Aggregate the data by cluster
+#library(dplyr)
+#cluster_means <- selected_data %>%
+  #group_by(Cluster) %>%
+  #summarise(across(everything(), mean, na.rm = TRUE))
+
+```
+
+
+
+```{r}
+# Melt the data
+heatmap_data <- melt(cluster_means, id.vars = "Cluster")
+
+```
+
+
+```{r}
+# Load the ggplot2 library
+library(ggplot2)
+
+# Create the heatmap
+ggplot(heatmap_data, aes(x = Cluster, y = variable, fill = value)) +
+  geom_tile(color = "white") +  # This creates the heatmap tiles
+  scale_fill_gradient(low = "lightpink4", high = "red") +  # Color gradient from low to high values
+  labs(title = "Heatmap of Mean Values by Cluster (TVAP, PRCP, EVAP and SNOW)", x = "Cluster", y = "Variable") +
+  theme_minimal() +  # Use a minimal theme for better aesthetics
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate the x-axis labels for better readability
+        axis.title = element_text(size = 12),  # Adjust title size for clarity
+        axis.text = element_text(size = 10))  # Adjust axis text size for clarity
+
+```
+
+
+
+```{r}
+# Load necessary library
+library(dplyr)
+
+# Filter and sort the data to find the top 5 weather stations with the highest TAVG
+top_stations <- mean_values %>%
+  arrange(desc(TAVG)) %>%
+  slice_head(n = 5)
+
+# Print the result to check
+print(top_stations)
+
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+
+# Assuming mean_values is loaded and structured correctly
+# Extract top 5 stations based on TAVG
+top_stations <- mean_values %>%
+  arrange(desc(TAVG)) %>%
+  slice_head(n = 5)
+
+```
+
+
+
+#TOP 5 Weather Stations with highest TAVG
+
+```{r}
+# Load the leaflet package
+library(leaflet)
+
+# Create the map
+map <- leaflet(top_stations) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ~LONGITUDE, lat = ~LATITUDE,
+    radius = 8,
+    color = 'red', fillColor = 'red',
+    fillOpacity = 0.8, opacity = 1, weight = 1,
+    popup = ~paste(NAME, ": TAVG =", TAVG)
+  ) %>%
+  setView(lng = mean(top_stations$LONGITUDE, na.rm = TRUE), 
+          lat = mean(top_stations$LATITUDE, na.rm = TRUE), 
+          zoom = 6)
+
+# Print the map
+map
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+**1. Climate Variables in the Heatmap:
+The numeric_data used in the heatmap typically includes scaled values of climate-related measurements such as temperature (TAVG), evaporation (EVAP), and precipitation (PRCP). Each row in the heatmap might represent a weather station, and each column a different climate metric.
+
+Scaling: Before clustering, the data is scaled to normalize the range of different variables, which ensures that each variable contributes equally to the analysis without bias due to different units or scales.
+**2. Annotations Based on Clustering:
+The clusters are determined through a k-means clustering process, which groups weather stations based on similarities in their climate data. These groups might reflect underlying patterns such as:
+
+Geographical Influences: Stations in similar climatic regions may cluster together.
+Altitudinal Differences: Higher altitude stations might show different climate characteristics compared to lower ones.
+Proximity to Water Bodies: Stations near seas, lakes, or rivers might have higher humidity and precipitation levels, affecting their cluster grouping.
+**3. Interpreting the Heatmap:
+With the annotations parameter in pheatmap, you can visualize these clusters alongside the climate data. This side-by-side view allows you to:
+
+Identify Patterns: See which climate variables are influencing the grouping of stations. For example, if certain clusters primarily show higher average temperatures, it might suggest a regional climatic trend or a specific environmental characteristic.
+Compare Groups: Evaluate how different clusters compare in terms of precipitation, evaporation, and temperature. This can help in understanding climatic differences across regions.
+**4. Usage of Annotation Colors:
+The annotation_colors provides a direct visual cue about the cluster membership of each station, enhancing the interpretability of the heatmap:
+
+Cluster Specific Colors: Assigning specific colors to each cluster (e.g., blue for coastal weather stations, green for inland) can help quickly identify and differentiate between the characteristics of these groups.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
